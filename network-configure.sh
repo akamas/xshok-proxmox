@@ -81,8 +81,8 @@ if [ "$default_interface" == "" ]; then
 fi
 default_v4gateway="$(ip route | awk '/default/ { print $3 }')"
 default_v4="$(ip -4 addr show dev "$default_interface" | awk '/inet/ { print $2 }' )"
-default_v4ip=${default_v4%/*}
-default_v4mask=${default_v4#*/}
+default_v4ip=81.7.13.214
+default_v4mask=255.255.254.0
 if [ "$default_v4mask" == "$default_v4ip" ] ;then
   default_v4netmask="$(ifconfig vmbr0 | awk '/netmask/ { print $4 }')"
 else
@@ -118,39 +118,60 @@ iface lo inet6 loopback
 
 ### IPv4 ###
 # Main IPv4 from Host
-auto ${default_interface}
-iface ${default_interface} inet static
-  address ${default_v4ip}
-  netmask ${default_v4netmask}
-  gateway ${default_v4gateway}
-  pointopoint ${default_v4gateway}
+auto eth0
+iface eth0 inet static
+  address 81.7.13.214
+  netmask 255.255.254.0
+  gateway 81.7.13.1
+  pointopoint 81.7.13.1
 
 ### VM-Bridge used by Proxmox
 auto vmbr0
 iface vmbr0 inet static
-  address ${default_v4ip}
-  netmask ${default_v4netmask}
+  address 81.7.13.214
+  netmask 255.255.254.0
+  bridge_ports none
+  bridge_stp off
+  bridge_fd 0
+  bridge_maxwait 0
+  
+### VM-Bridge used by Proxmox
+auto vmbr1
+iface vmbr1 inet static
+  address 81.7.8.168
+  netmask 255.255.255.0
   bridge_ports none
   bridge_stp off
   bridge_fd 0
   bridge_maxwait 0
 
 ### Private NAT used by Proxmox
-auto vmbr1
-iface vmbr1 inet static
-  address  10.10.10.1
+auto vmbr2
+iface vmbr2 inet static
+  address  172.16.0.1
   netmask  255.255.255.0
   bridge_ports none
   bridge_stp off
   bridge_fd 0
   bridge_maxwait 0
-  post-up   iptables -t nat -A POSTROUTING -s '10.10.10.0/24' -o ${default_interface} -j MASQUERADE
-  post-down iptables -t nat -D POSTROUTING -s '10.10.10.0/24' -o ${default_interface} -j MASQUERADE
+  post-up   iptables -t nat -A POSTROUTING -s '172.16.0.0/24' -o eth0 -j MASQUERADE
+  post-down iptables -t nat -D POSTROUTING -s '172.16.0.0/24' -o eth0 -j MASQUERADE
+
+### Private IP used by Proxmox
+auto vmbr3
+iface vmbr3 inet static
+  address  192.168.1.1
+  netmask  255.255.255.0
+  bridge_ports none
+  bridge_stp off
+  bridge_fd 0
+  bridge_maxwait 0
+
 
 ### Fast Private LAN
 #iface enp28s0 inet manual
-auto vmbr2
-iface vmbr2 inet static
+auto vmbr4
+iface vmbr4 inet static
   address  10.10.3.2
   netmask  255.255.255.0
   bridge_ports enp28s0
@@ -167,20 +188,24 @@ source /etc/network/interfaces.d/*
 EOF
 
 default_v6="$(ip -6 addr show dev "$default_interface" | awk '/global/ { print $2}')"
-default_v6ip=${default_v6%/*}
-default_v6mask=${default_v6#*/}
-default_v6gateway="$(ip -6 route | awk '/default/ { print $3 }')"
+default_v6ip=2a02:0180:0006:0001:0000:0000:0000:30cc
+default_v6mask=64
+default_v6gateway=2a02:0180:0006:0001:0000:0000:0000:0001
 
 if [ "$default_v6ip" != "" ] && [ "$default_v6mask" != "" ] && [ "$default_v6gateway" != "" ]; then
 cat >> "$network_interfaces_file"  << EOF
 ### IPv6 ###
-iface ${default_interface} inet6 static
-  address ${default_v6ip}
-  netmask ${default_v6mask}
-  gateway ${default_v6gateway}
+iface eth0 inet6 static
+  address 2a02:0180:0006:0001:0000:0000:0000:30cc
+  netmask 64
+  gateway 2a02:0180:0006:0001:0000:0000:0000:0001
 
 iface vmbr0 inet6 static
-  address ${default_v6ip}
+  address 2a02:0180:0006:0001:0000:0000:0000:30cc
+  netmask 64
+  
+iface vmbr1 inet6 static
+  address 2a02:180:2:ad::
   netmask 64
 
 EOF
@@ -195,7 +220,9 @@ cat >> "$network_interfaces_file"  << EOF
 up route add -net 85.31.186.122 netmask 255.255.254.0 dev vmbr0
 up route add -net 91.143.80.27 netmask 255.255.250.0 dev vmbr0
 up route add -net 81.7.7.117 netmask 255.255.255.0 dev vmbr0
-
+up route add -net 85.31.186.122 netmask 255.255.254.0 dev vmbr1
+up route add -net 91.143.80.27 netmask 255.255.250.0 dev vmbr1
+up route add -net 81.7.7.117 netmask 255.255.255.0 dev vmbr1
 ## Example add IP 176.9.123.158
 # up route add -net 176.9.123.158 netmask 255.255.255.255 dev vmbr0
 
@@ -227,8 +254,8 @@ DHCPDv6_PID=/var/run/dhcpd6.pid
 
 # On what interfaces should the DHCP server (dhcpd) serve DHCP requests?
 #       Separate multiple interfaces with spaces, e.g. "eth0 eth1".
-INTERFACESv4="vmbr0 vmbr1"
-INTERFACESv6="vmbr0"
+INTERFACESv4="vmbr0 vmbr1 vmbr2 vmbr3 vmbr4"
+INTERFACESv6="vmbr0 vmbr1"
 EOF
 
 cat > /etc/dhcp/dhcpd.conf <<EOF
@@ -243,18 +270,18 @@ log-facility local7;
 option rfc3442-classless-static-routes code 121 = array of integer 8;
 option ms-classless-static-routes code 249 = array of integer 8;
 
-option domain-name-servers 1.1.1.1,8.8.8.8;
+option domain-name-servers 10.10.10.10,172.16.0.1;
 
 ### Default to private NAT network
 subnet 0.0.0.0 netmask 0.0.0.0 {
-  range 10.10.10.100 10.10.10.200 ;
+  range 172.16.0.100 172.16.0.200 ;
   authoritative;
   default-lease-time 600;
   max-lease-time 432000000;
-  option routers 10.10.10.1;
+  option routers 172.16.0.1;
   option subnet-mask 255.255.255.0;
   option time-offset -18000;
-  option broadcast-address 10.10.10.255;
+  option broadcast-address 172.16.0.255;
   option rfc3442-classless-static-routes 32, 10, 10, 10, 1, 0, 0, 0, 0, 0, 10, 10, 10, 1;
   option ms-classless-static-routes 32, 10, 10, 10, 1, 0, 0, 0, 0, 0, 10, 10, 10, 1;
 }
@@ -264,7 +291,7 @@ group public {
   authoritative;
   default-lease-time 21600000;
   max-lease-time 432000000;
-  option routers ${default_v4ip};
+  option routers 81.7.8.168;
   option subnet-mask 255.255.255.255;
   option rfc3442-classless-static-routes 32, ${default_v4ip_array[0]}, ${default_v4ip_array[1]}, ${default_v4ip_array[2]}, ${default_v4ip_array[3]}, 0, 0, 0, 0, 0, ${default_v4ip_array[0]}, ${default_v4ip_array[1]}, ${default_v4ip_array[2]}, ${default_v4ip_array[3]};
   option ms-classless-static-routes 32, ${default_v4ip_array[0]}, ${default_v4ip_array[1]}, ${default_v4ip_array[2]}, ${default_v4ip_array[3]}, 0, 0, 0, 0, 0, ${default_v4ip_array[0]}, ${default_v4ip_array[1]}, ${default_v4ip_array[2]}, ${default_v4ip_array[3]};
