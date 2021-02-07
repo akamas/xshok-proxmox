@@ -1,3 +1,49 @@
+#!/usr/bin/env bash
+################################################################################
+# This is property of eXtremeSHOK.com
+# You are free to use, modify and distribute, however you may not remove this notice.
+# Copyright (c) Adrian Jon Kriel :: admin@extremeshok.com
+################################################################################
+#
+# Script updates can be found at: https://github.com/extremeshok/xshok-proxmox
+#
+# License: BSD (Berkeley Software Distribution)
+#
+################################################################################
+#
+## CREATES A ROUTED vmbr0 AND NAT vmbr1 NETWORK CONFIGURATION FOR PROXMOX
+# Autodetects the correct settings (interface, gatewat, netmask, etc)
+# Supports IPv4 and IPv6, Private Network uses 10.10.10.1/24
+#
+# Also installs and properly configures the isc-dhcp-server to allow for DHCP on the vmbr1 (NAT)
+#
+# ROUTED (vmbr0):
+#   All traffic is routed via the main IP address and uses the MAC address of the physical interface.
+#   VM's can have multiple IP addresses and they do NOT require a MAC to be set for the IP via service provider
+#
+# NAT (vmbr1):
+#   Allows a VM to have internet connectivity without requiring its own IP address
+#   Assignes 10.10.10.100 - 10.10.10.200 via DHCP
+#
+# Public IP's can be assigned via DHCP, adding a host define to the /etc/dhcp/hosts.public file
+#
+# Tested on OVH and Hetzner based servers
+#
+# ALSO CREATES A NAT Private Network as vmbr1
+#
+# NOTE: WILL OVERWRITE /etc/network/interfaces
+# A backup will be created as /etc/network/interfaces.timestamp
+#
+################################################################################
+#
+#    THERE ARE NO USER CONFIGURABLE OPTIONS IN THIS SCRIPT
+#
+################################################################################
+
+# Set the local
+export LANG="en_US.UTF-8"
+export LC_ALL="C"
+
 network_interfaces_file="/etc/network/interfaces"
 
 #Detect and install dependencies
@@ -35,8 +81,8 @@ if [ "$default_interface" == "" ]; then
 fi
 default_v4gateway="$(ip route | awk '/default/ { print $3 }')"
 default_v4="$(ip -4 addr show dev "$default_interface" | awk '/inet/ { print $2 }' )"
-default_v4ip=81.7.13.214
-default_v4mask=255.255.254.0
+default_v4ip=${default_v4%/*}
+default_v4mask=${default_v4#*/}
 if [ "$default_v4mask" == "$default_v4ip" ] ;then
   default_v4netmask="$(ifconfig vmbr0 | awk '/netmask/ { print $4 }')"
 else
@@ -72,69 +118,48 @@ iface lo inet6 loopback
 
 ### IPv4 ###
 # Main IPv4 from Host
-auto eth0
-iface eth0 inet static
-  address 81.7.13.214
-  netmask 255.255.254.0
-  gateway 81.7.13.1
-  pointopoint 81.7.13.1
+auto ${default_interface}
+iface ${default_interface} inet static
+  address ${default_v4ip}
+  netmask ${default_v4netmask}
+  gateway ${default_v4gateway}
+  pointopoint ${default_v4gateway}
 
 ### VM-Bridge used by Proxmox
 auto vmbr0
 iface vmbr0 inet static
-  address 81.7.13.214
-  netmask 255.255.254.0
-  bridge_ports none
-  bridge_stp off
-  bridge_fd 0
-  bridge_maxwait 0
-  
-### VM-Bridge used by Proxmox
-auto vmbr1
-iface vmbr1 inet static
-  address 81.7.8.168
-  netmask 255.255.255.0
+  address ${default_v4ip}
+  netmask ${default_v4netmask}
   bridge_ports none
   bridge_stp off
   bridge_fd 0
   bridge_maxwait 0
 
 ### Private NAT used by Proxmox
-auto vmbr2
-iface vmbr2 inet static
-  address  172.16.0.1
+auto vmbr1
+iface vmbr1 inet static
+  address  10.10.10.1
   netmask  255.255.255.0
   bridge_ports none
   bridge_stp off
   bridge_fd 0
   bridge_maxwait 0
-  post-up   iptables -t nat -A POSTROUTING -s '172.16.0.0/24' -o eth0 -j MASQUERADE
-  post-down iptables -t nat -D POSTROUTING -s '172.16.0.0/24' -o eth0 -j MASQUERADE
-
-### Private IP used by Proxmox
-auto vmbr3
-iface vmbr3 inet static
-  address  192.168.1.1
-  netmask  255.255.255.0
-  bridge_ports none
-  bridge_stp off
-  bridge_fd 0
-  bridge_maxwait 0
-
+  post-up   iptables -t nat -A POSTROUTING -s '10.10.10.0/24' -o ${default_interface} -j MASQUERADE
+  post-down iptables -t nat -D POSTROUTING -s '10.10.10.0/24' -o ${default_interface} -j MASQUERADE
 
 ### Fast Private LAN
 #iface enp28s0 inet manual
-auto vmbr4
-iface vmbr4 inet static
-  address  10.10.3.2
-  netmask  255.255.255.0
-  bridge_ports enp28s0
-  bridge_stp off
-  bridge_fd 0
-  pre-up ip link set enp28s0 mtu 8192
+#auto vmbr2
+#iface vmbr2 inet static
+#  address  10.10.3.2
+#  netmask  255.255.255.0
+#  bridge_ports enp28s0
+#  bridge_stp off
+#  bridge_fd 0
+#  pre-up ip link set enp28s0 mtu 8192
 #
 ## ## Run the following to enable migrations via the Fast Private LAN:
- echo "migration: insecure,network=10.10.3.0/24" >> /etc/pve/datacenter.cfg
+## echo "migration: insecure,network=10.10.3.0/24" >> /etc/pve/datacenter.cfg
 
 ### Load extra files, ie for extra gateways
 source /etc/network/interfaces.d/*
@@ -142,24 +167,20 @@ source /etc/network/interfaces.d/*
 EOF
 
 default_v6="$(ip -6 addr show dev "$default_interface" | awk '/global/ { print $2}')"
-default_v6ip=2a02:0180:0006:0001:0000:0000:0000:30cc
-default_v6mask=64
-default_v6gateway=2a02:0180:0006:0001:0000:0000:0000:0001
+default_v6ip=${default_v6%/*}
+default_v6mask=${default_v6#*/}
+default_v6gateway="$(ip -6 route | awk '/default/ { print $3 }')"
 
 if [ "$default_v6ip" != "" ] && [ "$default_v6mask" != "" ] && [ "$default_v6gateway" != "" ]; then
 cat >> "$network_interfaces_file"  << EOF
 ### IPv6 ###
-iface eth0 inet6 static
-  address 2a02:0180:0006:0001:0000:0000:0000:30cc
-  netmask 64
-  gateway 2a02:0180:0006:0001:0000:0000:0000:0001
+iface ${default_interface} inet6 static
+  address ${default_v6ip}
+  netmask ${default_v6mask}
+  gateway ${default_v6gateway}
 
 iface vmbr0 inet6 static
-  address 2a02:0180:0006:0001:0000:0000:0000:30cc
-  netmask 64
-  
-iface vmbr1 inet6 static
-  address 2a02:180:2:ad::
+  address ${default_v6ip}
   netmask 64
 
 EOF
@@ -171,12 +192,7 @@ cat >> "$network_interfaces_file"  << EOF
 # Use ./network-addiprange.sh script to add ip/ip ranges or edit the examples below
 #
 ## Example add IP range 176.9.216.192/27
-up route add -net 85.31.186.122 netmask 255.255.254.0 dev vmbr0
-up route add -net 91.143.80.27 netmask 255.255.250.0 dev vmbr0
-up route add -net 81.7.7.117 netmask 255.255.255.0 dev vmbr0
-up route add -net 85.31.186.122 netmask 255.255.254.0 dev vmbr1
-up route add -net 91.143.80.27 netmask 255.255.250.0 dev vmbr1
-up route add -net 81.7.7.117 netmask 255.255.255.0 dev vmbr1
+# up route add -net 94.130.239.192 netmask 255.255.255.192 dev vmbr0
 ## Example add IP 176.9.123.158
 # up route add -net 176.9.123.158 netmask 255.255.255.255 dev vmbr0
 
@@ -195,12 +211,12 @@ cat > /etc/default/isc-dhcp-server <<EOF
 # Defaults for isc-dhcp-server (sourced by /etc/init.d/isc-dhcp-server)
 
 # Path to dhcpd's config file (default: /etc/dhcp/dhcpd.conf).
-DHCPDv4_CONF=/etc/dhcp/dhcpd.conf
-DHCPDv6_CONF=/etc/dhcp/dhcpd6.conf
+#DHCPDv4_CONF=/etc/dhcp/dhcpd.conf
+#DHCPDv6_CONF=/etc/dhcp/dhcpd6.conf
 
 # Path to dhcpd's PID file (default: /var/run/dhcpd.pid).
-DHCPDv4_PID=/var/run/dhcpd.pid
-DHCPDv6_PID=/var/run/dhcpd6.pid
+#DHCPDv4_PID=/var/run/dhcpd.pid
+#DHCPDv6_PID=/var/run/dhcpd6.pid
 
 # Additional options to start dhcpd with.
 #       Don't use options -cf or -pf here; use DHCPD_CONF/ DHCPD_PID instead
@@ -208,8 +224,8 @@ DHCPDv6_PID=/var/run/dhcpd6.pid
 
 # On what interfaces should the DHCP server (dhcpd) serve DHCP requests?
 #       Separate multiple interfaces with spaces, e.g. "eth0 eth1".
-INTERFACESv4="vmbr0 vmbr1 vmbr2 vmbr3 vmbr4"
-INTERFACESv6="vmbr0 vmbr1"
+INTERFACESv4="vmbr0 vmbr1"
+#INTERFACESv6="vmbr0"
 EOF
 
 cat > /etc/dhcp/dhcpd.conf <<EOF
@@ -224,18 +240,18 @@ log-facility local7;
 option rfc3442-classless-static-routes code 121 = array of integer 8;
 option ms-classless-static-routes code 249 = array of integer 8;
 
-option domain-name-servers 10.10.10.10,172.16.0.1;
+option domain-name-servers 1.1.1.1,8.8.8.8;
 
 ### Default to private NAT network
 subnet 0.0.0.0 netmask 0.0.0.0 {
-  range 172.16.0.100 172.16.0.200 ;
+  range 10.10.10.100 10.10.10.200 ;
   authoritative;
   default-lease-time 600;
   max-lease-time 432000000;
-  option routers 172.16.0.1;
+  option routers 10.10.10.1;
   option subnet-mask 255.255.255.0;
   option time-offset -18000;
-  option broadcast-address 172.16.0.255;
+  option broadcast-address 10.10.10.255;
   option rfc3442-classless-static-routes 32, 10, 10, 10, 1, 0, 0, 0, 0, 0, 10, 10, 10, 1;
   option ms-classless-static-routes 32, 10, 10, 10, 1, 0, 0, 0, 0, 0, 10, 10, 10, 1;
 }
@@ -245,7 +261,7 @@ group public {
   authoritative;
   default-lease-time 21600000;
   max-lease-time 432000000;
-  option routers 81.7.8.168;
+  option routers ${default_v4ip};
   option subnet-mask 255.255.255.255;
   option rfc3442-classless-static-routes 32, ${default_v4ip_array[0]}, ${default_v4ip_array[1]}, ${default_v4ip_array[2]}, ${default_v4ip_array[3]}, 0, 0, 0, 0, 0, ${default_v4ip_array[0]}, ${default_v4ip_array[1]}, ${default_v4ip_array[2]}, ${default_v4ip_array[3]};
   option ms-classless-static-routes 32, ${default_v4ip_array[0]}, ${default_v4ip_array[1]}, ${default_v4ip_array[2]}, ${default_v4ip_array[3]}, 0, 0, 0, 0, 0, ${default_v4ip_array[0]}, ${default_v4ip_array[1]}, ${default_v4ip_array[2]}, ${default_v4ip_array[3]};
@@ -259,10 +275,10 @@ if [ ! -f "/etc/dhcp/hosts.public" ] ; then
 cat > "/etc/dhcp/hosts.public" <<EOF
 ###########
 ## EXAMPLE client /etc/network/interfaces
- auto lo
- iface lo inet loopback
- auto eth0
- iface eth0 inet dhcp
+# auto lo
+# iface lo inet loopback
+# auto eth0
+# iface eth0 inet dhcp
 ###########
 ## Alpine linux dhcp requires:
 # apk add dhclient
@@ -270,10 +286,10 @@ cat > "/etc/dhcp/hosts.public" <<EOF
 
 ## Assign a specific IP to a VM/CT with MAC 9E:94:13:7D:F3:0E to the IP 11.22.33.44 for host my.example.com
 ## set the bridge to vmbr0 and the MAC address will need to match the "hardware ethernet" MAC
-  host scloud.swebz.de {
-    hardware ethernet 00:50:56:07:5d:32;
-    fixed-address 81.7.7.117;
-  }
+#  host my.example.com {
+#    hardware ethernet AA:BB:CC:DD:EE:00;
+#    fixed-address 11.22.33.44;
+#  }
 #  host another.examle.com {
 #    option host-name "another.example.com"
 #    hardware ethernet 00:EE:DD:CC:BB:AA;
