@@ -50,10 +50,10 @@ export LC_ALL="C"
 
 LVM_MOUNT_POINT="$1"
 
-if [ "$LVM_MOUNT_POINT" == "" ]; then
+#if [ "$LVM_MOUNT_POINT" == "" ]; then
   # The default LVM mount which will be replaced with ZFS
-  LVM_MOUNT_POINT="/dev/mapper/pve-root"
-fi
+#  LVM_MOUNT_POINT="/var/lib/vz"
+#fi
 
 echo "+++++++++++++++++++++++++"
 echo "WILL DESTROY ALL DATA ON"
