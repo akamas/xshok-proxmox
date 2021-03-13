@@ -66,8 +66,8 @@ if [ -f "$container_config" ]; then
   addlineifnotfound "$container_config" "lxc.mount.auto: proc:rw sys:rw"
 
   #pve is missing the lxc binary
-  #lxc config set "$container_id" security.nesting true
-  #lxc config set "$container_id" security.privileged true
+  lxc config set "$container_id" security.nesting true
+  lxc config set "$container_id" security.privileged true
   #lxc restart "$container_id"
 
   #pve lxc container restart
