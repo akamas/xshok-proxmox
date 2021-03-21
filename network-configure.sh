@@ -178,7 +178,7 @@ EOF
 fi
 
 
-#cat >> "$network_interfaces_file"  << EOF
+cat >> "$network_interfaces_file"  << EOF
 ### Extra IP/IP Ranges ###
 # Use ./network-addiprange.sh script to add ip/ip ranges or edit the examples below
 #
@@ -188,7 +188,7 @@ fi
 #up route add -net 81.7.7.117 netmask 255.255.255.0 dev vmbr0
 ## Example add IP 176.9.123.158
 # up route add -net 176.9.123.158 netmask 255.255.255.255 dev vmbr0
-#EOF
+EOF
 
 
 # Configure isc-dhcp-server
