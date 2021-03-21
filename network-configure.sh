@@ -41,7 +41,7 @@
 ################################################################################
 
 # Set the local
-export LANG="en_US.UTF-8"
+export LANG="de_DE.UTF-8"
 export LC_ALL="C"
 
 network_interfaces_file="/etc/network/interfaces"
@@ -110,12 +110,10 @@ cp "$network_interfaces_file" "${network_interfaces_file}.$(date +"%Y-%m-%d_%H-%
 
 cat > "$network_interfaces_file" <<EOF
 ###### eXtremeSHOK.com
-
 ### LOOPBACK ###
 auto lo
 iface lo inet loopback
 iface lo inet6 loopback
-
 ### IPv4 ###
 # Main IPv4 from Host
 auto ${default_interface}
@@ -124,7 +122,6 @@ iface ${default_interface} inet static
   netmask ${default_v4netmask}
   gateway ${default_v4gateway}
   pointopoint ${default_v4gateway}
-
 ### VM-Bridge used by Proxmox
 auto vmbr0
 iface vmbr0 inet static
@@ -134,7 +131,6 @@ iface vmbr0 inet static
   bridge_stp off
   bridge_fd 0
   bridge_maxwait 0
-
 ### Private NAT used by Proxmox
 auto vmbr1
 iface vmbr1 inet static
@@ -146,24 +142,21 @@ iface vmbr1 inet static
   bridge_maxwait 0
   post-up   iptables -t nat -A POSTROUTING -s '10.10.10.0/24' -o ${default_interface} -j MASQUERADE
   post-down iptables -t nat -D POSTROUTING -s '10.10.10.0/24' -o ${default_interface} -j MASQUERADE
-
 ### Fast Private LAN
 #iface enp28s0 inet manual
-#auto vmbr2
-#iface vmbr2 inet static
-#  address  10.10.3.2
-#  netmask  255.255.255.0
-#  bridge_ports enp28s0
-#  bridge_stp off
-#  bridge_fd 0
-#  pre-up ip link set enp28s0 mtu 8192
+auto vmbr2
+iface vmbr2 inet static
+  address  10.10.3.2
+  netmask  255.255.255.0
+  bridge_ports enp28s0
+  bridge_stp off
+  bridge_fd 0
+  pre-up ip link set enp28s0 mtu 8192
 #
 ## ## Run the following to enable migrations via the Fast Private LAN:
-## echo "migration: insecure,network=10.10.3.0/24" >> /etc/pve/datacenter.cfg
-
+ echo "migration: insecure,network=10.10.3.0/24" >> /etc/pve/datacenter.cfg
 ### Load extra files, ie for extra gateways
 source /etc/network/interfaces.d/*
-
 EOF
 
 default_v6="$(ip -6 addr show dev "$default_interface" | awk '/global/ { print $2}')"
@@ -178,11 +171,9 @@ iface ${default_interface} inet6 static
   address ${default_v6ip}
   netmask ${default_v6mask}
   gateway ${default_v6gateway}
-
 iface vmbr0 inet6 static
   address ${default_v6ip}
   netmask 64
-
 EOF
 fi
 
@@ -192,10 +183,11 @@ cat >> "$network_interfaces_file"  << EOF
 # Use ./network-addiprange.sh script to add ip/ip ranges or edit the examples below
 #
 ## Example add IP range 176.9.216.192/27
-# up route add -net 94.130.239.192 netmask 255.255.255.192 dev vmbr0
+up route add -net 85.31.186.122 netmask 255.255.254.0 dev vmbr0
+up route add -net 91.143.80.27 netmask 255.255.250.0 dev vmbr0
+up route add -net 81.7.7.117 netmask 255.255.255.0 dev vmbr0
 ## Example add IP 176.9.123.158
 # up route add -net 176.9.123.158 netmask 255.255.255.255 dev vmbr0
-
 EOF
 
 
@@ -209,39 +201,31 @@ fi
 
 cat > /etc/default/isc-dhcp-server <<EOF
 # Defaults for isc-dhcp-server (sourced by /etc/init.d/isc-dhcp-server)
-
 # Path to dhcpd's config file (default: /etc/dhcp/dhcpd.conf).
-#DHCPDv4_CONF=/etc/dhcp/dhcpd.conf
-#DHCPDv6_CONF=/etc/dhcp/dhcpd6.conf
-
+DHCPDv4_CONF=/etc/dhcp/dhcpd.conf
+DHCPDv6_CONF=/etc/dhcp/dhcpd6.conf
 # Path to dhcpd's PID file (default: /var/run/dhcpd.pid).
-#DHCPDv4_PID=/var/run/dhcpd.pid
-#DHCPDv6_PID=/var/run/dhcpd6.pid
-
+DHCPDv4_PID=/var/run/dhcpd.pid
+DHCPDv6_PID=/var/run/dhcpd6.pid
 # Additional options to start dhcpd with.
 #       Don't use options -cf or -pf here; use DHCPD_CONF/ DHCPD_PID instead
 #OPTIONS=""
-
 # On what interfaces should the DHCP server (dhcpd) serve DHCP requests?
 #       Separate multiple interfaces with spaces, e.g. "eth0 eth1".
 INTERFACESv4="vmbr0 vmbr1"
-#INTERFACESv6="vmbr0"
+INTERFACESv6="vmbr0"
 EOF
 
 cat > /etc/dhcp/dhcpd.conf <<EOF
 ### eXtremeSHOK.com
 # https://linux.die.net/man/5/dhcpd.conf
-
 ddns-update-style none;
 default-lease-time 600;
 max-lease-time 7200;
 log-facility local7;
-
 option rfc3442-classless-static-routes code 121 = array of integer 8;
 option ms-classless-static-routes code 249 = array of integer 8;
-
 option domain-name-servers 1.1.1.1,8.8.8.8;
-
 ### Default to private NAT network
 subnet 0.0.0.0 netmask 0.0.0.0 {
   range 10.10.10.100 10.10.10.200 ;
@@ -255,7 +239,6 @@ subnet 0.0.0.0 netmask 0.0.0.0 {
   option rfc3442-classless-static-routes 32, 10, 10, 10, 1, 0, 0, 0, 0, 0, 10, 10, 10, 1;
   option ms-classless-static-routes 32, 10, 10, 10, 1, 0, 0, 0, 0, 0, 10, 10, 10, 1;
 }
-
 ### vmbr0 ; Public Network
 group public {
   authoritative;
@@ -269,27 +252,25 @@ group public {
   include "/etc/dhcp/hosts.public";
 }
 #end group public
-
 EOF
 if [ ! -f "/etc/dhcp/hosts.public" ] ; then
 cat > "/etc/dhcp/hosts.public" <<EOF
 ###########
 ## EXAMPLE client /etc/network/interfaces
-# auto lo
-# iface lo inet loopback
-# auto eth0
-# iface eth0 inet dhcp
+ auto lo
+ iface lo inet loopback
+ auto eth0
+ iface eth0 inet dhcp
 ###########
 ## Alpine linux dhcp requires:
 # apk add dhclient
 ###########
-
 ## Assign a specific IP to a VM/CT with MAC 9E:94:13:7D:F3:0E to the IP 11.22.33.44 for host my.example.com
 ## set the bridge to vmbr0 and the MAC address will need to match the "hardware ethernet" MAC
-#  host my.example.com {
-#    hardware ethernet AA:BB:CC:DD:EE:00;
-#    fixed-address 11.22.33.44;
-#  }
+  host scloud.swebz.de {
+    hardware ethernet 00:50:56:07:5d:32;
+    fixed-address 81.7.7.117;
+  }
 #  host another.examle.com {
 #    option host-name "another.example.com"
 #    hardware ethernet 00:EE:DD:CC:BB:AA;
