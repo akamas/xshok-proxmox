@@ -42,7 +42,7 @@
 
 # Set the local
 export LANG="de_DE.UTF-8"
-export LC_ALL="C"
+export LC_ALL="DE"
 
 network_interfaces_file="/etc/network/interfaces"
 
