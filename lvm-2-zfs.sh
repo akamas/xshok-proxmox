@@ -51,7 +51,7 @@ export LC_ALL="C"
 LVM_MOUNT_POINT="$1"
 
 #if [ "$LVM_MOUNT_POINT" == "" ]; then
-  # The default LVM mount which will be replaced with ZFS
+#  # The default LVM mount which will be replaced with ZFS
 #  LVM_MOUNT_POINT="/var/lib/vz"
 #fi
 
